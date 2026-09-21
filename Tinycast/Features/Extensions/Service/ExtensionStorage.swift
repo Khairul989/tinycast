@@ -73,13 +73,18 @@ final class ExtensionStorage {
     }
 
     private let directory: URL
+    private let secrets: ExtensionPreferenceSecretStore
     private var stores: [String: Store] = [:]
     /// Writes are coalesced, so a busy `Cache` doesn't hit the disk per key.
     private var dirty: Set<String> = []
     private var flushTask: Task<Void, Never>?
 
-    init(directory: URL) {
+    init(
+        directory: URL,
+        secrets: ExtensionPreferenceSecretStore = KeychainPreferenceSecretStore()
+    ) {
         self.directory = directory
+        self.secrets = secrets
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
@@ -140,17 +145,43 @@ final class ExtensionStorage {
 
     // MARK: - Preferences
 
-    func preference(extension name: String, key: String) -> ExtensionPreferenceValue? {
-        store(for: name).preferences[key]?.preferenceValue
+    func preference(
+        extension name: String, key: String, kind: ExtensionPreferenceSchema.Kind
+    ) -> ExtensionPreferenceValue? {
+        guard kind == .password else { return store(for: name).preferences[key]?.preferenceValue }
+        // A copy written before secrets moved to the Keychain: relocate it, then scrub the file.
+        if case .string(let plaintext)? = store(for: name).preferences[key] {
+            secrets.set(plaintext, account: secrets.account(extension: name, key: key))
+            mutate(name) { $0.preferences.removeValue(forKey: key) }
+            return .string(plaintext)
+        }
+        return secrets.get(account: secrets.account(extension: name, key: key)).map { .string($0) }
     }
 
-    func setPreference(extension name: String, key: String, value: ExtensionPreferenceValue?) {
-        mutate(name) { store in
-            if let value {
-                store.preferences[key] = StoredValue(preference: value)
-            } else {
-                store.preferences.removeValue(forKey: key)
+    func setPreference(
+        extension name: String, key: String, value: ExtensionPreferenceValue?,
+        kind: ExtensionPreferenceSchema.Kind
+    ) {
+        guard kind == .password else {
+            mutate(name) { store in
+                if let value {
+                    store.preferences[key] = StoredValue(preference: value)
+                } else {
+                    store.preferences.removeValue(forKey: key)
+                }
             }
+            return
+        }
+
+        let account = secrets.account(extension: name, key: key)
+        if case .string(let text)? = value, !text.isEmpty {
+            secrets.set(text, account: account)
+        } else {
+            secrets.remove(account: account)
+        }
+        // The file must never keep a second copy, including one an older build left behind.
+        if store(for: name).preferences[key] != nil {
+            mutate(name) { $0.preferences.removeValue(forKey: key) }
         }
     }
 
@@ -160,7 +191,8 @@ final class ExtensionStorage {
     ) -> [String: ExtensionPreferenceValue] {
         var resolved: [String: ExtensionPreferenceValue] = [:]
         for schema in schemas {
-            resolved[schema.name] = schema.runtimeValue(preference(extension: name, key: schema.name))
+            resolved[schema.name] = schema.runtimeValue(
+                preference(extension: name, key: schema.name, kind: schema.kind))
         }
         return resolved
     }
@@ -171,7 +203,9 @@ final class ExtensionStorage {
     ) -> [ExtensionPreferenceSchema] {
         schemas.filter { schema in
             guard schema.required else { return false }
-            let value = preference(extension: name, key: schema.name) ?? schema.effectiveDefault
+            let value =
+                preference(extension: name, key: schema.name, kind: schema.kind)
+                ?? schema.effectiveDefault
             if case .string(let text) = value { return text.isEmpty }
             return false
         }
@@ -179,6 +213,7 @@ final class ExtensionStorage {
 
     func removeAll(extension name: String) {
         stores.removeValue(forKey: name)
+        secrets.removeAll(prefix: "\(name):")
         try? FileManager.default.removeItem(at: fileURL(for: name))
     }
 

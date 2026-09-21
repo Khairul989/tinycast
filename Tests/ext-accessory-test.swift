@@ -17,7 +17,10 @@ enum ExtensionPreferenceValue: Equatable {
 }
 
 struct ExtensionPreferenceSchema {
+    enum Kind { case textfield, password }
+
     let name: String
+    let kind: Kind = .textfield
     let required: Bool
     let effectiveDefault: ExtensionPreferenceValue
 
@@ -162,7 +165,8 @@ struct ExtensionSearchAccessoryTests {
         storage.setLocalStorage(extension: "sample", key: "filter", value: .string("extension-data"))
         storage.setAccessoryValue(extension: "sample", key: "filter", value: "selected")
         storage.setPreference(
-            extension: "sample", key: "editor", value: .application("/Applications/Editor.app"))
+            extension: "sample", key: "editor", value: .application("/Applications/Editor.app"),
+            kind: .textfield)
         check(
             "a pick never lands in the namespace JavaScript reads",
             storage.localStorageValue(extension: "sample", key: "filter") == .string("extension-data"))
@@ -177,12 +181,13 @@ struct ExtensionSearchAccessoryTests {
             reloaded.accessoryValue(extension: "sample", key: "filter") == "selected")
         check(
             "an app picker persists as its path",
-            reloaded.preference(extension: "sample", key: "editor")
+            reloaded.preference(extension: "sample", key: "editor", kind: .textfield)
                 == .string("/Applications/Editor.app"))
 
         // A store written before dropdowns held anything: the missing key must cost nothing.
         storage.setLocalStorage(extension: "older", key: "kept", value: .string("value"))
-        storage.setPreference(extension: "older", key: "token", value: .string("secret"))
+        storage.setPreference(
+            extension: "older", key: "token", value: .string("secret"), kind: .textfield)
         storage.flush()
         let file = directory.appendingPathComponent("older.json")
         if var older = (try? Data(contentsOf: file))
@@ -199,7 +204,8 @@ struct ExtensionSearchAccessoryTests {
             older.localStorageValue(extension: "older", key: "kept") == .string("value"))
         check(
             "a store with no accessory section keeps its preferences",
-            older.preference(extension: "older", key: "token") == .string("secret"))
+            older.preference(extension: "older", key: "token", kind: .textfield)
+                == .string("secret"))
     }
 
     static func check(_ label: String, _ condition: Bool, _ detail: String = "") {

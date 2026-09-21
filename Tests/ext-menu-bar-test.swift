@@ -10,7 +10,8 @@ extension ExtensionTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let storage = ExtensionStorage(directory: directory.appendingPathComponent("storage"))
         for (key, value) in environmentPreferences() {
-            storage.setPreference(extension: owner.manifest.name, key: key, value: value)
+            storage.setPreference(
+                extension: owner.manifest.name, key: key, value: value, kind: .textfield)
         }
         var hosts: [StubHost] = []
         var boots = 0
