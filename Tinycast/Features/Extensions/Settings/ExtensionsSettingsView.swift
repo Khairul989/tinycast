@@ -699,7 +699,8 @@ private struct ExtensionPreferenceRow: View {
                 .labelsHidden()
                 .onChange(of: flag) { _, value in
                     storage.setPreference(
-                        extension: extensionName, key: schema.name, value: .bool(value))
+                        extension: extensionName, key: schema.name, value: .bool(value),
+                        kind: schema.kind)
                 }
         case .dropdown:
             Picker("", selection: $text) {
@@ -734,14 +735,15 @@ private struct ExtensionPreferenceRow: View {
 
     private func load() {
         let value =
-            storage.preference(extension: extensionName, key: schema.name)
+            storage.preference(extension: extensionName, key: schema.name, kind: schema.kind)
             ?? schema.effectiveDefault
         text = value.stringValue
         flag = value.boolValue
     }
 
     private func save(_ value: String) {
-        storage.setPreference(extension: extensionName, key: schema.name, value: .string(value))
+        storage.setPreference(
+            extension: extensionName, key: schema.name, value: .string(value), kind: schema.kind)
     }
 
     private func choosePath() {
