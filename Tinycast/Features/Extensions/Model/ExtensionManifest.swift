@@ -237,7 +237,10 @@ struct ExtensionManifest: Sendable, Hashable {
     }
 
     init?(json: [String: Any]) {
-        guard let name = json["name"] as? String else { return nil }
+        // npm forbids a leading dot; "", "." and ".." would escape the install directory.
+        guard let name = json["name"] as? String, !name.isEmpty, !name.hasPrefix(".") else {
+            return nil
+        }
         let commands = (json["commands"] as? [Any] ?? []).compactMap(ExtensionCommand.init(json:))
         guard !commands.isEmpty else { return nil }
         self.name = name
